@@ -15,9 +15,9 @@
 #include "game_history.hpp"
 #include "minimax.hpp"
 #include "random.hpp"
-#include "alphabeta.hpp"   // [TODO REGISTRY] — added for the new Alpha-Beta AI
+#include "alphabeta.hpp" 
 #include "pvs.hpp"
-
+#include "quiescence.hpp"
 
 struct AlgoEntry {
     std::string name;
@@ -45,10 +45,6 @@ inline const std::vector<AlgoEntry>& get_algo_table(){
             }
         },
         {
-            // [TODO REGISTRY] — nothing to implement here, this entry is complete.
-            // Once you implement eval_ctx and search in alphabeta.cpp,
-            // this entry makes "alphabeta" appear in the GUI dropdown
-            // and the UBGI Algorithm option automatically.
             "alphabeta",
             AlphaBeta::default_params(),
             AlphaBeta::param_defs(),
@@ -62,6 +58,14 @@ inline const std::vector<AlgoEntry>& get_algo_table(){
             PVS::param_defs(),
             [](State* s, int d, GameHistory& h, SearchContext& c){
                 return PVS::search(s, d, h, c);
+            }
+        },
+        {
+            "quiescence",
+            Quiescence::default_params(),
+            Quiescence::param_defs(),
+            [](State* s, int d, GameHistory& h, SearchContext& c){
+                return Quiescence::search(s, d, h, c);
             }
         },
     };

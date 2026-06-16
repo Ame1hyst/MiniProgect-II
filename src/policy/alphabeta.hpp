@@ -2,58 +2,40 @@
 #include "search_types.hpp"
 #include "game_history.hpp"
 
-/*============================================================
- * Alpha-Beta Pruning Parameters
- *============================================================*/
+// Alpha-Beta Pruning Parameters
 struct ABParams {
     bool use_kp_eval       = true;
     bool use_eval_mobility = true;
     bool report_partial    = true;
-    bool use_quiescence    = true;
 
     static ABParams from_map(const ParamMap& m){
         ABParams p;
         p.use_kp_eval       = param_bool(m, "UseKPEval",       true);
         p.use_eval_mobility = param_bool(m, "UseEvalMobility", true);
         p.report_partial    = param_bool(m, "ReportPartial",   true);
-        p.use_quiescence    = param_bool(m, "UseQuiescence",   true);
         return p;
     }
 };
 
-/*============================================================
- * AlphaBeta class — declarations only
- * Implementations are in alphabeta.cpp
- *============================================================*/
 class AlphaBeta {
 public:
-    static int qsearch(
-        State*          state,
-        int             alpha,
-        int             beta,
-        GameHistory&    history,
-        int             ply,
-        SearchContext&  ctx,
-        const ABParams& p
-    );
-
     static int eval_ctx(
-        State*          state,
-        int             depth,
-        int             alpha,
-        int             beta,
-        GameHistory&    history,
-        int             ply,
-        SearchContext&  ctx,
+        State *state,
+        int depth,
+        int alpha, //best score player
+        int beta, // best score opponent
+        GameHistory& history,
+        int ply,
+        SearchContext& ctx,
         const ABParams& p
     );
 
     static SearchResult search(
-        State*          state,
-        int             depth,
-        GameHistory&    history,
-        SearchContext&  ctx
-    );
+        State *state,
+        int depth,
+        GameHistory& history,
+        SearchContext& ctx
+    ); 
 
     static ParamMap              default_params();
     static std::vector<ParamDef> param_defs();
