@@ -1,126 +1,193 @@
 #include <utility>
+#include <algorithm>
 #include "state.hpp"
 #include "quiescence.hpp"
 
 
 /*============================================================
- * Quiescence — qsearch
- *
- * Quiescence Search to resolve tactical capture sequences
- * at the leaves (depth <= 0).
+ * Quiescence — quiesce
  *============================================================*/
-int Quiescence::qsearch(
-    State*                  state,
-    int                     alpha,
-    int                     beta,
-    GameHistory&            history,
-    int                     ply,
-    SearchContext&          ctx,
-    const QuiescenceParams& p
+int Quiescence::quiesce(
+    State *state,
+    GameHistory& history,
+    int ply,
+    int alpha,
+    int beta,
+    SearchContext& ctx,
+    const QSParams& p
 ){
-    // [TODO Q-1]
-    // 1. Increment ctx.nodes.
-    // 2. Update ctx.seldepth if ply > ctx.seldepth.
-    // 3. If ctx.stop is true, return 0.
-    
-    // [TODO Q-2]
-    // 4. Get static evaluation (stand-pat score):
-    //    int stand_pat = state->evaluate(p.use_kp_eval, p.use_eval_mobility, &history);
-    // 5. If stand_pat >= beta, return beta (beta cutoff).
-    // 6. If stand_pat > alpha, update alpha = stand_pat.
+    ctx.nodes++;
+    if(ply > ctx.seldepth) ctx.seldepth = ply;
+    if(ctx.stop) return 0;
 
-    // [TODO Q-3]
-    // 7. Generate legal moves if they have not been generated yet.
-    
-    // [TODO Q-4]
-    // 8. Loop through all legal_actions:
-    //    a. Check if the action is a capture. In MiniChess, a move is a capture if:
-    //         action.first.first < BOARD_H && state->piece_at(1 - state->player, action.second.first, action.second.second) > 0
-    //    b. If it is NOT a capture, skip it (continue).
-    //    c. If it IS a capture:
-    //         - Create child: State* next = static_cast<State*>(state->next_state(action));
-    //         - Check if player is same: bool same = next->same_player_as_parent();
-    //         - Recursive call to qsearch:
-    //             int raw = qsearch(next, -beta, -alpha, history, ply + 1, ctx, p);
-    //             int score = same ? raw : -raw;
-    //         - delete next;
-    //         - Update alpha and check beta cutoff:
-    //             if (score >= beta) return beta;
-    //             if (score > alpha) alpha = score;
-    // 9. Return alpha.
+    if(state->legal_actions.empty() && state->game_state == UNKNOWN)
+        state->get_legal_actions();
 
-    return 0; // Placeholder
+    if(state->game_state == WIN)  return P_MAX - ply;
+    if(state->game_state == DRAW) return 0;
+
+    // Stand-pat
+    int stand_pat = state->evaluate(p.use_kp_eval, p.use_eval_mobility, &history);
+    if(stand_pat >= beta) return beta;
+    if(stand_pat > alpha) alpha = stand_pat;
+
+    // Collect captures and sort by MVV-LVA
+    std::vector<Move> captures;
+    for(auto& action : state->legal_actions){
+        if(action.first.first < BOARD_H &&
+           state->piece_at(1 - state->player,
+               action.second.first, action.second.second) > 0)
+            captures.push_back(action);
+    }
+
+    std::sort(captures.begin(), captures.end(), [&](const Move& a, const Move& b){
+        int va = state->piece_at(1 - state->player, a.second.first, a.second.second);
+        int vb = state->piece_at(1 - state->player, b.second.first, b.second.second);
+        int aa = state->piece_at(state->player, a.first.first, a.first.second);
+        int ab = state->piece_at(state->player, b.first.first, b.first.second);
+        return (PIECE_VALUES[va] - PIECE_VALUES[aa]) >
+               (PIECE_VALUES[vb] - PIECE_VALUES[ab]);
+    });
+
+    for(auto& action : captures){
+        State* next = static_cast<State*>(state->next_state(action));
+        bool same = next->same_player_as_parent();
+
+        int raw = quiesce(next, history, ply + 1,
+            same ?  alpha : -beta,
+            same ?  beta  : -alpha,
+            ctx, p);
+        int score = same ? raw : -raw;
+
+        delete next;
+
+        if(score >= beta) return beta;
+        if(score > alpha) alpha = score;
+    }
+
+    return alpha;
 }
 
 
 /*============================================================
  * Quiescence — eval_ctx
- *
- * Negamax with Alpha-Beta pruning, calling qsearch at the leaves.
  *============================================================*/
 int Quiescence::eval_ctx(
-    State*                  state,
-    int                     depth,
-    int                     alpha,
-    int                     beta,
-    GameHistory&            history,
-    int                     ply,
-    SearchContext&          ctx,
-    const QuiescenceParams& p
+    State *state,
+    int depth,
+    int alpha,
+    int beta,
+    GameHistory& history,
+    int ply,
+    SearchContext& ctx,
+    const QSParams& p
 ){
-    // [TODO Q-5]
-    // 1. Increment nodes, update seldepth, check stop flag.
-    // 2. Lazy generation of legal actions.
-    // 3. Handle terminal states (WIN/DRAW).
-    // 4. Handle repetition check.
-    //
-    // 5. Handle the leaf node (depth <= 0):
-    //    Instead of calling state->evaluate() like in AlphaBeta,
-    //    call qsearch:
-    //        int score = qsearch(state, alpha, beta, history, ply, ctx, p);
-    //    Pop the hash from history before returning!
-    //
-    // 6. Alpha-Beta Negamax loop:
-    //    Loop through legal_actions, recurse eval_ctx with (-beta, -alpha),
-    //    convert to current perspective, update best_score/alpha, and
-    //    break if alpha >= beta.
-    
-    return 0; // Placeholder
+    ctx.nodes++;
+    if(ply > ctx.seldepth) ctx.seldepth = ply;
+    if(ctx.stop) return 0;
+
+    if(state->legal_actions.empty() && state->game_state == UNKNOWN)
+        state->get_legal_actions();
+
+    if(state->game_state == WIN)  return P_MAX - ply;
+    if(state->game_state == DRAW) return 0;
+
+    int rep_score;
+    if(state->check_repetition(history, rep_score)) return rep_score;
+    history.push(state->hash());
+
+    if(depth <= 0){
+        history.pop(state->hash());
+        return quiesce(state, history, ply, alpha, beta, ctx, p);
+    }
+
+    // Sort all moves — captures first by MVV-LVA
+    std::sort(state->legal_actions.begin(), state->legal_actions.end(),
+        [&](const Move& a, const Move& b){
+            int va = state->piece_at(1 - state->player, a.second.first, a.second.second);
+            int vb = state->piece_at(1 - state->player, b.second.first, b.second.second);
+            return PIECE_VALUES[va] > PIECE_VALUES[vb];
+        });
+
+    for(auto& action : state->legal_actions){
+        State* next = static_cast<State*>(state->next_state(action));
+        bool same = next->same_player_as_parent();
+
+        int raw = eval_ctx(next, depth - 1,
+            same ? alpha : -beta,
+            same ? beta  : -alpha,
+            history, ply + 1, ctx, p);
+        int score = same ? raw : -raw;
+
+        delete next;
+
+        if(score > alpha) alpha = score;
+        if(alpha >= beta) break;
+    }
+
+    history.pop(state->hash());
+    return alpha;
 }
 
 
 /*============================================================
  * Quiescence — search
- *
- * Root-level search: iterates legal moves, tracks best move.
  *============================================================*/
 SearchResult Quiescence::search(
-    State*                  state,
-    int                     depth,
-    GameHistory&            history,
-    SearchContext&          ctx
+    State *state,
+    int depth,
+    GameHistory& history,
+    SearchContext& ctx
 ){
     ctx.reset();
-    QuiescenceParams p = QuiescenceParams::from_map(ctx.params);
+    QSParams p = QSParams::from_map(ctx.params);
     SearchResult result;
     result.depth = depth;
 
-    if (!state->legal_actions.size())
+    if(!state->legal_actions.size())
         state->get_legal_actions();
 
-    // [TODO Q-6]
-    // 1. Set up the root alpha-beta window:
-    //    int alpha = M_MAX - 10;
-    //    int beta  = P_MAX + 10;
-    // 2. Loop over state->legal_actions. For each action:
-    //    a. Get child state.
-    //    b. Call eval_ctx(next, depth - 1, -beta, -alpha, history, 1, ctx, p);
-    //    c. Convert score.
-    //    d. Update best_score and best_move.
-    //    e. Call on_root_update if p.report_partial.
-    //    f. Update alpha if score > alpha.
-    // 3. Return the SearchResult with nodes, seldepth, and pv updated.
+    int alpha = M_MAX;
+    int beta  = P_MAX;
 
+    int move_index  = 0;
+    int total_moves = (int)state->legal_actions.size();
+
+    // Sort root moves — captures first
+    std::sort(state->legal_actions.begin(), state->legal_actions.end(),
+        [&](const Move& a, const Move& b){
+            int va = state->piece_at(1 - state->player, a.second.first, a.second.second);
+            int vb = state->piece_at(1 - state->player, b.second.first, b.second.second);
+            return PIECE_VALUES[va] > PIECE_VALUES[vb];
+        });
+
+    for(auto& action : state->legal_actions){
+        State* next = static_cast<State*>(state->next_state(action));
+        bool same = next->same_player_as_parent();
+
+        int raw = eval_ctx(next, depth - 1,
+            same ? alpha : -beta,
+            same ? beta  : -alpha,
+            history, 1, ctx, p);
+        int score = same ? raw : -raw;
+
+        delete next;
+
+        if(score > alpha){
+            alpha = score;
+            result.best_move = action;
+            result.score = alpha;
+
+            if(p.report_partial && ctx.on_root_update)
+                ctx.on_root_update({result.best_move, alpha, depth, move_index + 1, total_moves});
+        }
+        move_index++;
+    }
+
+    result.nodes    = ctx.nodes;
+    result.seldepth = ctx.seldepth;
+    result.pv       = {result.best_move};
+    result.score    = alpha;
     return result;
 }
 

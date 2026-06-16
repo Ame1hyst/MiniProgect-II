@@ -9,7 +9,7 @@
 
 
 /*============================================================
- * KP (King-Piece) Evaluation tables
+ * KP (King-Piece) Evaluation tables - care about position and piece
  *
  * Always compiled. Toggled at runtime via use_kp_eval param.
  *============================================================*/
@@ -59,6 +59,14 @@ static int king_tropism(
     }
     return 0;
 }
+
+// 50 step rules
+static const int endgame_material[7] = {0, 2, 6, 7, 8, 20, 0};
+const int MAX_PHASE = 18; // total pieces remaining (not included King)
+
+
+// pawn pass rules
+static const int passed_bonus[6] = {0, 18, 12, 8, 6, 4};
 
 
 /*============================================================
@@ -140,6 +148,72 @@ int State::evaluate(
             }
         }
 
+        /* === Pawn pass score - pawn close promotion rules === */
+        
+        // white = 0 -> row decrease
+        int self_dir = (this->player == 0) ? -1: 1;
+        int oppn_dir = (this->player == 0) ? 1: -1;
+
+        // check self pass pawn
+        for(int r = 0; r < BOARD_H; r++){
+            for(int c = 0; c < BOARD_W; c++){
+                if(self_board[r][c] == 1){
+                    bool passed = true;
+
+                    for(int next_r = r + self_dir; next_r >= 0 && next_r < BOARD_H; next_r += self_dir){
+                        if(oppn_board[next_r][c] == 1){ //block by opp pawn
+                            passed = false;
+                            break;
+                        }
+                    }
+
+                    if(passed){
+                        int promo_r = (this->player == 0) ? 0: (BOARD_H - 1);
+                        int near_promo_score = std::abs(r - promo_r);
+
+                        self_score += passed_bonus[std::min(near_promo_score, 5)];
+
+                    }
+                }
+            }
+        }
+
+        // check opp pawn passed
+        for(int r = 0; r < BOARD_H; r++){
+            for(int c = 0; c < BOARD_W; c++){
+                if(oppn_board[r][c] == 1){
+                    bool passed = true;
+
+                    for(int next_r = r + oppn_dir; next_r >= 0 && next_r < BOARD_H; next_r += oppn_dir){
+                        if(self_board[next_r][c] == 1){ //block by opp pawn
+                            passed = false;
+                            break;
+                        }
+                    }
+
+                    if(passed){
+                        int promo_r = (this->player == 0) ? (BOARD_H - 1): 0;
+                        int near_promo_score = std::abs(r - promo_r);
+
+                        oppn_score += passed_bonus[std::min(near_promo_score, 5)];
+
+                    }
+                }
+            }
+        }
+
+        /* ===  Doubled Pawn - pawn i same col === */
+        for(int c = 0; c < BOARD_W; c++){
+            int self_pawn_in_col = 0;
+            int oppn_pawn_in_col = 0;
+            for(int r = 0; r < BOARD_H; r++){
+                if(self_board[r][c] == 1) self_pawn_in_col++;
+                if(oppn_board[r][c] == 1) oppn_pawn_in_col++;
+            }
+            if(self_pawn_in_col > 1) self_score -= 4 * (self_pawn_in_col - 1);
+            if(oppn_pawn_in_col > 1) oppn_score -= 4 * (oppn_pawn_in_col - 1);       
+        }
+
     }else{
         /* === Simple material-only eval === */
 
@@ -173,6 +247,29 @@ int State::evaluate(
         bonus += 2 * (self_mobility - oppn_mobility);
         delete opp_state;
     }
+
+    /* === 50 step rules === */
+    int pieces_left = 0;
+    for(int r = 0; r < BOARD_H; r++){
+        for(int c = 0; c < BOARD_W; c++){
+            if(self_board[r][c] >= 1 && self_board[r][c] <= 5) pieces_left++;
+            if(oppn_board[r][c] >= 1 && oppn_board[r][c] <= 5) pieces_left++;
+        }
+    }
+
+    int self_endgame = 0;
+    int oppn_endgame = 0;
+    for(int r = 0; r < BOARD_H; r++){
+        for(int c = 0; c < BOARD_W; c++){
+            int self_piece = self_board[r][c];
+            int oopn_piece = oppn_board[r][c];
+            if(self_piece) self_endgame += endgame_material[self_piece];
+            if(oopn_piece) oppn_endgame += endgame_material[oopn_piece];
+        }
+    }
+    // 0 when all pieces on board, 5 when board nearly empty
+    int weight = (5 * (MAX_PHASE - pieces_left)) / MAX_PHASE;
+    bonus += weight * (self_endgame - oppn_endgame);
 
     return self_score - oppn_score + bonus;
 }
