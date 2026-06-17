@@ -18,6 +18,7 @@
 #include "alphabeta.hpp" 
 #include "pvs.hpp"
 #include "quiescence.hpp"
+#include "pvs_q.hpp"
 
 struct AlgoEntry {
     std::string name;
@@ -68,6 +69,14 @@ inline const std::vector<AlgoEntry>& get_algo_table(){
                 return Quiescence::search(s, d, h, c);
             }
         },
+        {
+            "pvs_q",
+            PVSQ::default_params(),
+            PVSQ::param_defs(),
+            [](State* s, int d, GameHistory& h, SearchContext& c){
+                return PVSQ::search(s, d, h, c);
+            }
+        }
     };
     return table;
 }

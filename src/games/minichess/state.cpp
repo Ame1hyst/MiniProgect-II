@@ -137,7 +137,7 @@ int State::evaluate(
                 if(opp_pieec){
                     oppn_score += kp_material[opp_pieec];
 
-                    int pst_r = (this->player == 1) ? r : (BOARD_H - 1 - r);
+                    int pst_r = (this->player == 0) ? (BOARD_H - 1 - r): r;
                     oppn_score += pst[opp_pieec - 1][pst_r][c];
 
                     if(self_kr >= 0){

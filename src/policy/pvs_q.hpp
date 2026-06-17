@@ -1,0 +1,49 @@
+#pragma once
+#include "search_types.hpp"
+#include "game_history.hpp"
+
+// PVS+ Q search parameters
+struct PVSQParams {
+    bool use_kp_eval = true;
+    bool use_eval_mobility = true;
+    bool report_partial = true;
+
+    static PVSQParams from_map(const ParamMap& m){
+        PVSQParams p;
+        p.use_kp_eval       = param_bool(m, "UseKPEval", true);
+        p.use_eval_mobility = param_bool(m, "UseEvalMobility", true);
+        p.report_partial    = param_bool(m, "ReportPartial", true);
+        return p;
+    }
+};
+
+class PVSQ {
+public:
+    static int quiesce(
+        State *state,
+        GameHistory& history,
+        int ply,
+        int alpha,
+        int beta,
+        SearchContext& ctx,
+        const PVSQParams& p
+    );
+    static int eval_ctx(
+        State *state,
+        int depth,
+        int alpha,
+        int beta,
+        GameHistory& history,
+        int ply,
+        SearchContext& ctx,
+        const PVSQParams& p
+    );
+    static SearchResult search(
+        State *state,
+        int depth,
+        GameHistory& history,
+        SearchContext& ctx
+    );
+    static ParamMap default_params();
+    static std::vector<ParamDef> param_defs();
+};
