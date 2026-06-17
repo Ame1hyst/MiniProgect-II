@@ -4,15 +4,15 @@
 
 // Alpha-Beta Pruning Parameters
 struct ABParams {
-    bool use_kp_eval       = true;
+    bool use_kp_eval = true;
     bool use_eval_mobility = true;
-    bool report_partial    = true;
+    bool report_partial = true;
 
     static ABParams from_map(const ParamMap& m){
         ABParams p;
-        p.use_kp_eval       = param_bool(m, "UseKPEval",       true);
+        p.use_kp_eval       = param_bool(m, "UseKPEval", true);
         p.use_eval_mobility = param_bool(m, "UseEvalMobility", true);
-        p.report_partial    = param_bool(m, "ReportPartial",   true);
+        p.report_partial    = param_bool(m, "ReportPartial", true);
         return p;
     }
 };
@@ -37,6 +37,6 @@ public:
         SearchContext& ctx
     ); 
 
-    static ParamMap              default_params();
+    static ParamMap default_params();
     static std::vector<ParamDef> param_defs();
 };

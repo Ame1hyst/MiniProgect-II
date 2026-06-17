@@ -62,14 +62,15 @@ int PVS::eval_ctx(
             first_move = false;
         }
         else {
-            // Moves 2+: null window first
+            // Moves 2++: null window 
             int raw = eval_ctx(next, depth-1,
-                same ?  alpha    : -(alpha+1),  // null window
+                same ?  alpha    : -(alpha+1),  // null window (almost zero)
                 same ? (alpha+1) :  -alpha,
                 history, ply+1, ctx, p);
             score = same ? raw : -raw;
-
-            if(score > alpha && score < beta){
+            
+            // re-search - better than assume but not beta cut-off
+            if(score > alpha && score < beta){ 
                 int raw2 = eval_ctx(next, depth-1,
                     same ? score : -beta,
                     same ? beta  : -score,
@@ -78,8 +79,9 @@ int PVS::eval_ctx(
             }
         }
         delete next;
+        if (score >= beta) { history.pop(state->hash()); return beta; } // prune - beta cut-off
         if (score > alpha) alpha = score;
-        if (alpha >= beta) break;  
+ 
     }
     history.pop(state->hash());
     return alpha;
@@ -131,6 +133,7 @@ SearchResult PVS::search(
                 same ? (alpha+1) : -alpha, 
                 history, 1, ctx, p);
               score = same ? raw : -raw;
+
             if (score > alpha && score < beta) {
                 int raw2 = eval_ctx(next, depth-1,
                     same ? score : -beta,

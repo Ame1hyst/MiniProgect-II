@@ -47,26 +47,24 @@ int AlphaBeta::eval_ctx(
     // Alpha Beta Negamax    
       for (auto& action : state->legal_actions) {
     
-          State* next = static_cast<State*>(state->next_state(action));
-          bool same = next->same_player_as_parent(); // for extra turn
+        State* next = static_cast<State*>(state->next_state(action));
+        bool same = next->same_player_as_parent(); // for extra turn
     
 
-          int raw = eval_ctx(
+        int raw = eval_ctx(
             next, depth - 1, 
             same ? alpha : -beta,
             same ? beta  : -alpha, 
             history, ply + 1, ctx, p
             );
     
-          // Convert to the current player's perspective.
-          int score = same ? raw : -raw;
+        // Convert to the current player's perspective.
+        int score = same ? raw : -raw;
     
-          delete next;
+        delete next;
     
-          if (score > alpha) alpha = score;
-
-          // Beta cut-off -opponent already has a better option,
-          if (alpha >= beta) break; // prune
+        if (score >= beta) { history.pop(state->hash()); return beta; } // prune - beta cut-off
+        if (score > alpha) alpha = score;
       }
     
       history.pop(state->hash());

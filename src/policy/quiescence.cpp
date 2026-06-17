@@ -26,9 +26,9 @@ int Quiescence::quiesce(
     if(state->game_state == WIN)  return P_MAX - ply;
     if(state->game_state == DRAW) return 0;
 
-    // Stand-pat
+    // eval stand pat
     int stand_pat = state->evaluate(p.use_kp_eval, p.use_eval_mobility, &history);
-    if(stand_pat >= beta) return beta;
+    if(stand_pat >= beta) return beta; // prune -> return val in [alpha, beta] 
     if(stand_pat > alpha) alpha = stand_pat;
 
     // Collect captures and sort by MVV-LVA
@@ -41,12 +41,12 @@ int Quiescence::quiesce(
     }
 
     std::sort(captures.begin(), captures.end(), [&](const Move& a, const Move& b){
-        int va = state->piece_at(1 - state->player, a.second.first, a.second.second);
-        int vb = state->piece_at(1 - state->player, b.second.first, b.second.second);
-        int aa = state->piece_at(state->player, a.first.first, a.first.second);
-        int ab = state->piece_at(state->player, b.first.first, b.first.second);
-        return (PIECE_VALUES[va] - PIECE_VALUES[aa]) >
-               (PIECE_VALUES[vb] - PIECE_VALUES[ab]);
+        int victim_a = state->piece_at(1 - state->player, a.second.first, a.second.second);
+        int victim_b = state->piece_at(1 - state->player, b.second.first, b.second.second);
+        int attk_a = state->piece_at(state->player, a.first.first, a.first.second);
+        int attk_b = state->piece_at(state->player, b.first.first, b.first.second);
+        return (PIECE_VALUES[victim_a] - PIECE_VALUES[attk_a]) >
+               (PIECE_VALUES[victim_b] - PIECE_VALUES[attk_b]);
     });
 
     for(auto& action : captures){
@@ -104,9 +104,9 @@ int Quiescence::eval_ctx(
     // Sort all moves — captures first by MVV-LVA
     std::sort(state->legal_actions.begin(), state->legal_actions.end(),
         [&](const Move& a, const Move& b){
-            int va = state->piece_at(1 - state->player, a.second.first, a.second.second);
+            int victim_a = state->piece_at(1 - state->player, a.second.first, a.second.second);
             int vb = state->piece_at(1 - state->player, b.second.first, b.second.second);
-            return PIECE_VALUES[va] > PIECE_VALUES[vb];
+            return PIECE_VALUES[victim_a] > PIECE_VALUES[vb];
         });
 
     for(auto& action : state->legal_actions){
@@ -121,8 +121,8 @@ int Quiescence::eval_ctx(
 
         delete next;
 
+        if(score >= beta) { history.pop(state->hash()); return beta; }
         if(score > alpha) alpha = score;
-        if(alpha >= beta) break;
     }
 
     history.pop(state->hash());
@@ -156,9 +156,9 @@ SearchResult Quiescence::search(
     // Sort root moves — captures first
     std::sort(state->legal_actions.begin(), state->legal_actions.end(),
         [&](const Move& a, const Move& b){
-            int va = state->piece_at(1 - state->player, a.second.first, a.second.second);
+            int victim_a = state->piece_at(1 - state->player, a.second.first, a.second.second);
             int vb = state->piece_at(1 - state->player, b.second.first, b.second.second);
-            return PIECE_VALUES[va] > PIECE_VALUES[vb];
+            return PIECE_VALUES[victim_a] > PIECE_VALUES[vb];
         });
 
     for(auto& action : state->legal_actions){

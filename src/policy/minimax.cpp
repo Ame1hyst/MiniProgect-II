@@ -63,7 +63,7 @@ int MiniMax::eval_ctx(
         // create the child state after applying action
         State *next = static_cast<State*>(state->next_state(action));
 
-        bool same = next->same_player_as_parent();
+        bool same = next->same_player_as_parent(); //check extra turn
 
         // [Hackathon TODO 3-3]
         // search the child one level deeper
