@@ -105,8 +105,11 @@ int Quiescence::eval_ctx(
     std::stable_sort(state->legal_actions.begin(), state->legal_actions.end(),
         [&](const Move& a, const Move& b){
             int victim_a = state->piece_at(1 - state->player, a.second.first, a.second.second);
-            int vb = state->piece_at(1 - state->player, b.second.first, b.second.second);
-            return PIECE_VALUES[victim_a] > PIECE_VALUES[vb];
+            int victim_b = state->piece_at(1 - state->player, b.second.first, b.second.second);
+            int attk_a = state->piece_at(state->player, a.first.first, a.first.second);
+            int attk_b = state->piece_at(state->player, b.first.first, b.first.second);
+            return (100 * PIECE_VALUES[victim_a] - PIECE_VALUES[attk_a]) >
+            (100 * PIECE_VALUES[victim_b] - PIECE_VALUES[attk_b]);
         });
 
     for(auto& action : state->legal_actions){
@@ -157,8 +160,11 @@ SearchResult Quiescence::search(
     std::stable_sort(state->legal_actions.begin(), state->legal_actions.end(),
         [&](const Move& a, const Move& b){
             int victim_a = state->piece_at(1 - state->player, a.second.first, a.second.second);
-            int vb = state->piece_at(1 - state->player, b.second.first, b.second.second);
-            return PIECE_VALUES[victim_a] > PIECE_VALUES[vb];
+            int victim_b = state->piece_at(1 - state->player, b.second.first, b.second.second);
+            int attk_a = state->piece_at(state->player, a.first.first, a.first.second);
+            int attk_b = state->piece_at(state->player, b.first.first, b.first.second);
+            return (100 * PIECE_VALUES[victim_a] - PIECE_VALUES[attk_a]) >
+            (100 * PIECE_VALUES[victim_b] - PIECE_VALUES[attk_b]);
         });
 
     for(auto& action : state->legal_actions){

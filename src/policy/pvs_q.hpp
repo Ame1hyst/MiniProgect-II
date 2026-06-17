@@ -2,7 +2,6 @@
 #include "search_types.hpp"
 #include "game_history.hpp"
 
-// PVS+ Q search parameters
 struct PVSQParams {
     bool use_kp_eval = true;
     bool use_eval_mobility = true;

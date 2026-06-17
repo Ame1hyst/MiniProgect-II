@@ -1,4 +1,5 @@
 #include <utility>
+#include <algorithm>
 #include "state.hpp"
 #include "pvs.hpp"
 
@@ -72,8 +73,8 @@ int PVS::eval_ctx(
             // re-search - better than assume but not beta cut-off
             if(score > alpha && score < beta){ 
                 int raw2 = eval_ctx(next, depth-1,
-                    same ? score : -beta,
-                    same ? beta  : -score,
+                    same ? alpha : -beta,
+                    same ? beta  : -alpha,
                     history, ply+1, ctx, p);
                 score = same ? raw2 : -raw2;
             }
@@ -134,10 +135,11 @@ SearchResult PVS::search(
                 history, 1, ctx, p);
               score = same ? raw : -raw;
 
+            // re-search - better than assume but not beta cut-off
             if (score > alpha && score < beta) {
                 int raw2 = eval_ctx(next, depth-1,
-                    same ? score : -beta,
-                    same ? beta  : -score,
+                    same ? alpha : -beta,
+                    same ? beta  : -alpha,
                     history, 1, ctx, p);
                 score = same ? raw2 : -raw2;
               }
