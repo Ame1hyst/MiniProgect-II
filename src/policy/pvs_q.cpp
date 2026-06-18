@@ -43,6 +43,20 @@ static const Move INVALID_MOVE = Move(
     Point((size_t)-1, (size_t)-1)
 );
 
+// Killer moves
+static const int MAX_PLY = 64;
+static Move killers[MAX_PLY][2];
+static void killer_store(int ply, const Move& m){
+    if(ply >= MAX_PLY) return;
+    if(killers[ply][0] == m) return;
+    killers[ply][1] = killers[ply][0];
+    killers[ply][0] = m;
+}
+static bool killer_match(int ply, const Move& m){
+    if(ply >= MAX_PLY) return false;
+    return killers[ply][0] == m || killers[ply][1] == m;
+}
+
 
 /*============================================================
  * PVSQ — quiesce
@@ -66,8 +80,12 @@ int PVSQ::quiesce(
     if(state->game_state == WIN)  return P_MAX - ply;
     if(state->game_state == DRAW) return 0;
 
-    // Stand pat
-    int stand_pat = state->evaluate(p.use_kp_eval, p.use_eval_mobility, &history);
+    // Stand pat (mobility disabled — too expensive at quiescence nodes)
+    int stand_pat = state->evaluate(p.use_kp_eval, false, &history);
+
+    // Safety net: cap quiescence depth to avoid explosion
+    if(ply > 30) return stand_pat;
+
     if(stand_pat >= beta) return beta;
     if(stand_pat > alpha) alpha = stand_pat;
 
@@ -80,11 +98,11 @@ int PVSQ::quiesce(
     }
 
     std::sort(captures.begin(), captures.end(), [&](const Move& a, const Move& b){
-        int va   = PIECE_VALUES[state->piece_at(1-state->player, a.second.first, a.second.second)];
-        int atk_a = PIECE_VALUES[state->piece_at(state->player,  a.first.first,  a.first.second)];
-        int vb   = PIECE_VALUES[state->piece_at(1-state->player, b.second.first, b.second.second)];
-        int atk_b = PIECE_VALUES[state->piece_at(state->player,  b.first.first,  b.first.second)];
-        return (va - atk_a) > (vb - atk_b);
+        int va    = PIECE_VALUES[state->piece_at(1-state->player, a.second.first, a.second.second)];
+        int atk_a = PIECE_VALUES[state->piece_at(state->player,   a.first.first,  a.first.second)];
+        int vb    = PIECE_VALUES[state->piece_at(1-state->player, b.second.first, b.second.second)];
+        int atk_b = PIECE_VALUES[state->piece_at(state->player,   b.first.first,  b.first.second)];
+        return ((100 * va) - atk_a) > ((100 * vb) - atk_b);
     });
 
     for(auto& action : captures){
@@ -133,6 +151,7 @@ int PVSQ::eval_ctx(
     if(state->check_repetition(history, rep_score)) return rep_score;
 
     uint64_t h = state->hash();
+    if(history.count(h) >= 1) return 0;
     history.push(h);
 
     // Transposition table lookup
@@ -151,23 +170,65 @@ int PVSQ::eval_ctx(
         }
     }
 
+    // --- Null Move Pruning (NMP) ---
+    // Conservative: R=2, depth>=3, not at root, and only when we have major
+    // pieces left. This avoids Zugzwang blindness in pure king/pawn endings.
+    int R = 2;
+    if(depth >= 3 && ply > 0){
+        // Count major pieces remaining to prevent Zugzwang endgame blindness
+        int major_pieces = 0;
+        for(int r = 0; r < BOARD_H; r++){
+            for(int c = 0; c < BOARD_W; c++){
+                int pt = state->board.board[state->player][r][c];
+                if(pt >= 2 && pt <= 5) major_pieces++;
+            }
+        }
+
+        // Only prune if we have attacking units left on the board
+        if(major_pieces > 0){
+            State* null_state = static_cast<State*>(state->create_null_state());
+            int null_score = -eval_ctx(null_state, depth - 1 - R, -beta, -(beta - 1),
+                                       history, ply + 1, ctx, p);
+            delete null_state;
+
+            if(null_score >= beta){
+                history.pop(h);
+                return beta;
+            }
+        }
+    }
+
     // Quiescence at leaf
     if(depth <= 0){
         history.pop(h);
         return quiesce(state, history, ply, alpha, beta, ctx, p);
     }
 
-    // Move ordering: TT move first, then MVV-LVA
+    // Move ordering: TT move first, then captures (MVV-LVA), then killers, then quiet
     auto& actions = state->legal_actions;
-    std::sort(actions.begin(), actions.end(), [&](const Move& a, const Move& b){
-        bool a_tt  = (a == tt_move);
-        bool b_tt  = (b == tt_move);
+    std::stable_sort(actions.begin(), actions.end(), [&](const Move& a, const Move& b){
+        bool a_tt = (a == tt_move);
+        bool b_tt = (b == tt_move);
         if(a_tt != b_tt) return a_tt;
-        int va    = PIECE_VALUES[state->piece_at(1-state->player, a.second.first,  a.second.second)];
-        int atk_a = PIECE_VALUES[state->piece_at(  state->player, a.first.first,   a.first.second)];
-        int vb    = PIECE_VALUES[state->piece_at(1-state->player, b.second.first,  b.second.second)];
-        int atk_b = PIECE_VALUES[state->piece_at(  state->player, b.first.first,   b.first.second)];
-        return (va - atk_a) > (vb - atk_b);
+
+        int va = PIECE_VALUES[state->piece_at(1-state->player, a.second.first, a.second.second)];
+        int vb = PIECE_VALUES[state->piece_at(1-state->player, b.second.first, b.second.second)];
+        bool a_cap = va > 0, b_cap = vb > 0;
+
+        if(a_cap != b_cap) return a_cap;
+
+        if(a_cap && b_cap){
+            int atk_a = PIECE_VALUES[state->piece_at(state->player, a.first.first, a.first.second)];
+            int atk_b = PIECE_VALUES[state->piece_at(state->player, b.first.first, b.first.second)];
+            return ((100 * va) - atk_a) > ((100 * vb) - atk_b);
+        }
+
+        // Killer moves
+        bool a_kill = killer_match(ply, a);
+        bool b_kill = killer_match(ply, b);
+        if(a_kill != b_kill) return a_kill;
+
+        return false;
     });
 
     // PVS negamax
@@ -206,9 +267,13 @@ int PVSQ::eval_ctx(
         delete next;
 
         if(score >= beta){
+            // Store killer if quiet move (non-capture)
+            if(PIECE_VALUES[state->piece_at(1-state->player,
+                    action.second.first, action.second.second)] == 0)
+                killer_store(ply, action);
             tt[tt_idx] = {h, beta, pack_move(action),
                           (uint8_t)std::min(depth, 255), TT_LOWER};
-            history.pop(h);
+            history.pop(h);   // must balance the push above before early return
             return beta;
         }
         if(score > alpha){
@@ -237,6 +302,9 @@ SearchResult PVSQ::search(
     SearchContext& ctx
 ){
     ctx.reset();
+    std::fill(tt, tt + TT_SIZE, TTEntry{});                          // clear TT each search
+    std::fill(killers[0], killers[0] + MAX_PLY * 2, INVALID_MOVE);  // clear killers
+
     PVSQParams p = PVSQParams::from_map(ctx.params);
     SearchResult result;
     result.depth = depth;
@@ -251,14 +319,46 @@ SearchResult PVSQ::search(
     int move_index  = 0;
     int total_moves = (int)state->legal_actions.size();
 
-    // Root move ordering: MVV-LVA
-    std::sort(state->legal_actions.begin(), state->legal_actions.end(),
+    // Root TT lookup — use best move from previous iteration
+    uint64_t h = state->hash();
+
+    // NOTE: do NOT push h into history here.
+    // ubgi.cpp already pushes the starting position and all replayed moves
+    // into g_history before calling search(). A second push here would
+    // double-count the root, causing check_repetition() to fire a false
+    // draw after just one more repetition instead of the required three.
+
+    int tt_idx = (int)(h & (uint64_t)(TT_SIZE - 1));
+    Move tt_move = INVALID_MOVE;
+    if(tt[tt_idx].key == h && tt[tt_idx].packed_move != 0){
+        tt_move = unpack_move(tt[tt_idx].packed_move);
+    }
+
+    // Root move ordering: TT move first, then captures (MVV-LVA), then killers, then quiet
+    std::stable_sort(state->legal_actions.begin(), state->legal_actions.end(),
         [&](const Move& a, const Move& b){
-            int va    = PIECE_VALUES[state->piece_at(1-state->player, a.second.first,  a.second.second)];
-            int atk_a = PIECE_VALUES[state->piece_at(  state->player, a.first.first,   a.first.second)];
-            int vb    = PIECE_VALUES[state->piece_at(1-state->player, b.second.first,  b.second.second)];
-            int atk_b = PIECE_VALUES[state->piece_at(  state->player, b.first.first,   b.first.second)];
-            return (va - atk_a) > (vb - atk_b);
+            bool a_tt = (a == tt_move);
+            bool b_tt = (b == tt_move);
+            if(a_tt != b_tt) return a_tt;
+
+            int va = PIECE_VALUES[state->piece_at(1-state->player, a.second.first, a.second.second)];
+            int vb = PIECE_VALUES[state->piece_at(1-state->player, b.second.first, b.second.second)];
+            bool a_cap = va > 0, b_cap = vb > 0;
+
+            if(a_cap != b_cap) return a_cap;
+
+            if(a_cap && b_cap){
+                int atk_a = PIECE_VALUES[state->piece_at(state->player, a.first.first, a.first.second)];
+                int atk_b = PIECE_VALUES[state->piece_at(state->player, b.first.first, b.first.second)];
+                return ((100 * va) - atk_a) > ((100 * vb) - atk_b);
+            }
+
+            // Killer moves at root (ply 0)
+            bool a_kill = killer_match(0, a);
+            bool b_kill = killer_match(0, b);
+            if(a_kill != b_kill) return a_kill;
+
+            return false;
         });
 
     for(auto& action : state->legal_actions){
@@ -308,6 +408,11 @@ SearchResult PVSQ::search(
     result.seldepth = ctx.seldepth;
     result.pv       = {result.best_move};
     result.score    = alpha;
+
+    // Save root result back into the Transposition Table
+    uint16_t pm = (result.best_move != INVALID_MOVE) ? pack_move(result.best_move) : 0;
+    tt[tt_idx] = {h, alpha, pm, (uint8_t)std::min(depth, 255), TT_EXACT};
+
     return result;
 }
 

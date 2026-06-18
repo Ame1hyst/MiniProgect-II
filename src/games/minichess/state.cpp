@@ -161,7 +161,18 @@ int State::evaluate(
                     bool passed = true;
 
                     for(int next_r = r + self_dir; next_r >= 0 && next_r < BOARD_H; next_r += self_dir){
+                        // Check current column
                         if(oppn_board[next_r][c] == 1){ //block by opp pawn
+                            passed = false;
+                            break;
+                        }
+                        // Fix: Check left capture diagonal
+                        if(c > 0 && oppn_board[next_r][c-1] == 1){
+                            passed = false;
+                            break;
+                        }
+                        // Fix: Check right capture diagonal
+                        if(c < BOARD_W - 1 && oppn_board[next_r][c+1] == 1){
                             passed = false;
                             break;
                         }
@@ -172,7 +183,6 @@ int State::evaluate(
                         int near_promo_score = std::abs(r - promo_r);
 
                         self_score += passed_bonus[std::min(near_promo_score, 5)];
-
                     }
                 }
             }
@@ -185,7 +195,18 @@ int State::evaluate(
                     bool passed = true;
 
                     for(int next_r = r + oppn_dir; next_r >= 0 && next_r < BOARD_H; next_r += oppn_dir){
-                        if(self_board[next_r][c] == 1){ //block by opp pawn
+                        // Check current column
+                        if(self_board[next_r][c] == 1){ //block by self pawn
+                            passed = false;
+                            break;
+                        }
+                        // Fix: Check left capture diagonal
+                        if(c > 0 && self_board[next_r][c-1] == 1){
+                            passed = false;
+                            break;
+                        }
+                        // Fix: Check right capture diagonal
+                        if(c < BOARD_W - 1 && self_board[next_r][c+1] == 1){
                             passed = false;
                             break;
                         }
@@ -196,7 +217,6 @@ int State::evaluate(
                         int near_promo_score = std::abs(r - promo_r);
 
                         oppn_score += passed_bonus[std::min(near_promo_score, 5)];
-
                     }
                 }
             }
@@ -240,12 +260,9 @@ int State::evaluate(
         // bonus += 2 * (self_mobility - oppn_mobility);
 
         int self_mobility = this->legal_actions.size();
-
-        BaseState *opp_state = create_null_state();
-        int oppn_mobility = opp_state->legal_actions.size();
-
-        bonus += 2 * (self_mobility - oppn_mobility);
-        delete opp_state;
+        
+        // Fix: Removed expensive heap allocation (create_null_state) which was destroying speed
+        bonus += 2 * (self_mobility);
     }
 
     /* === 50 step rules === */
@@ -789,8 +806,7 @@ const char piece_table[2][7][5] = {
 };
 /**
  * @brief encode the output for command line output
- * 
- * @return std::string 
+ * * @return std::string 
  */
 std::string State::encode_output() const{
     std::stringstream ss;
@@ -814,8 +830,7 @@ std::string State::encode_output() const{
 
 /**
  * @brief encode the state to the format for player
- * 
- * @return std::string 
+ * * @return std::string 
  */
 std::string State::encode_state(){
     std::stringstream ss;
