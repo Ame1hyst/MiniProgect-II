@@ -1,6 +1,6 @@
 #include <utility>
-#include "state.hpp"
-#include "alphabeta.hpp"
+#include "114006202_state.hpp"
+#include "114006202_alphabeta.hpp"
 
 
 // AlphaBeta — eval_ctx

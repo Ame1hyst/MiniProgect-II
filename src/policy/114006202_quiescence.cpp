@@ -1,7 +1,7 @@
 #include <utility>
 #include <algorithm>
-#include "state.hpp"
-#include "quiescence.hpp"
+#include "114006202_state.hpp"
+#include "114006202_quiescence.hpp"
 
 
 /*============================================================
@@ -27,11 +27,11 @@ int Quiescence::quiesce(
     if(state->game_state == DRAW) return 0;
 
     // eval stand pat
-    int stand_pat = state->evaluate(p.use_kp_eval, p.use_eval_mobility, &history);
+    int stand_pat = state->evaluate(p.use_kp_eval, false, &history); // more faster
     if(stand_pat >= beta) return beta; // prune -> return val in [alpha, beta] 
     if(stand_pat > alpha) alpha = stand_pat;
 
-    // Collect captures and sort by MVV-LVA
+    // Collect captures and sort by MVV-LVA (Most Valuable Victim − Least Valuable Attacker)
     std::vector<Move> captures;
     for(auto& action : state->legal_actions){
         if(action.first.first < BOARD_H &&

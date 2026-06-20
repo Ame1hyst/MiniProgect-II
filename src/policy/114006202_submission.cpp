@@ -1,7 +1,7 @@
 #include <utility>
 #include <algorithm>
-#include "state.hpp"
-#include "pvs_q.hpp"
+#include "114006202_state.hpp"
+#include "114006202_submission.hpp"
 
 /*============================================================
  * Transposition Table
@@ -15,10 +15,10 @@ static const uint8_t TT_UPPER = 3;     // fail-low  (score <= orig_alpha)
 
 static inline uint16_t pack_move(const Move& m){
     return (uint16_t)(
-        ((uint16_t)m.first.first  << 9) |
-        ((uint16_t)m.first.second << 6) |
-        ((uint16_t)m.second.first << 3) |
-         (uint16_t)m.second.second
+        ((uint16_t)m.first.first  << 9) | // from row: bits 11-9
+        ((uint16_t)m.first.second << 6) | // from col: bits 8-6
+        ((uint16_t)m.second.first << 3) | // to row:   bits 5-3
+         (uint16_t)m.second.second        // to col:   bits 2-0
     );
 }
 static inline Move unpack_move(uint16_t pm){
@@ -29,11 +29,11 @@ static inline Move unpack_move(uint16_t pm){
 }
 
 struct TTEntry {
-    uint64_t key         = 0;
-    int32_t  score       = 0;
-    uint16_t packed_move = 0;
-    uint8_t  depth       = 0;
-    uint8_t  flag        = 0;
+    uint64_t key = 0; // position this entry belongs to
+    int32_t  score = 0; 
+    uint16_t packed_move = 0; // best move that found (in bit form)
+    uint8_t  depth = 0; // depth when store
+    uint8_t  flag = 0; // EXACT, LOWER, or UPPER
 };
 
 static TTEntry tt[TT_SIZE];
@@ -89,7 +89,7 @@ int PVSQ::quiesce(
     if(stand_pat >= beta) return beta;
     if(stand_pat > alpha) alpha = stand_pat;
 
-    // Collect and sort captures by MVV-LVA
+    // Collect and sort captures by MVV-LVA (Most Valuable Victim − Least Valuable Attacker)
     std::vector<Move> captures;
     for(auto& action : state->legal_actions){
         if(state->piece_at(1 - state->player,
@@ -111,7 +111,7 @@ int PVSQ::quiesce(
 
         int raw = quiesce(next, history, ply+1,
             same ? alpha : -beta,
-            same ? beta  : -alpha,
+            same ? beta : -alpha,
             ctx, p);
         int score = same ? raw : -raw;
         delete next;
@@ -151,28 +151,26 @@ int PVSQ::eval_ctx(
     if(state->check_repetition(history, rep_score)) return rep_score;
 
     uint64_t h = state->hash();
-    if(history.count(h) >= 1) return 0;
+    if(history.count(h) >= 2) return 0;
     history.push(h);
 
     // Transposition table lookup
-    int      tt_idx    = (int)(h & (uint64_t)(TT_SIZE - 1));
-    TTEntry& tte       = tt[tt_idx];
-    int      orig_alpha = alpha;
-    Move     tt_move   = INVALID_MOVE;
+    int tt_idx = (int)(h & (uint64_t)(TT_SIZE - 1));
+    TTEntry& tte = tt[tt_idx];
+    int orig_alpha = alpha;
+    Move tt_move = INVALID_MOVE;
 
-    if(tte.key == h){
+    if(tte.key == h){ // 20 bit below can be the same
         if(tte.packed_move != 0)
-            tt_move = unpack_move(tte.packed_move);
+            tt_move = unpack_move(tte.packed_move); //old best move -> move ordering
         if((int)tte.depth >= depth){
             if(tte.flag == TT_EXACT){ history.pop(h); return tte.score; }
-            if(tte.flag == TT_LOWER && tte.score >= beta ){ history.pop(h); return tte.score; }
-            if(tte.flag == TT_UPPER && tte.score <= alpha){ history.pop(h); return tte.score; }
+            if(tte.flag == TT_LOWER && tte.score >= beta ){ history.pop(h); return tte.score; } //beta-cutoff
+            if(tte.flag == TT_UPPER && tte.score <= alpha){ history.pop(h); return tte.score; } // fail low
         }
     }
 
     // --- Null Move Pruning (NMP) ---
-    // Conservative: R=2, depth>=3, not at root, and only when we have major
-    // pieces left. This avoids Zugzwang blindness in pure king/pawn endings.
     int R = 2;
     if(depth >= 3 && ply > 0){
         // Count major pieces remaining to prevent Zugzwang endgame blindness
@@ -207,10 +205,12 @@ int PVSQ::eval_ctx(
     // Move ordering: TT move first, then captures (MVV-LVA), then killers, then quiet
     auto& actions = state->legal_actions;
     std::stable_sort(actions.begin(), actions.end(), [&](const Move& a, const Move& b){
+        // TT
         bool a_tt = (a == tt_move);
         bool b_tt = (b == tt_move);
         if(a_tt != b_tt) return a_tt;
 
+        // MVV-LVA
         int va = PIECE_VALUES[state->piece_at(1-state->player, a.second.first, a.second.second)];
         int vb = PIECE_VALUES[state->piece_at(1-state->player, b.second.first, b.second.second)];
         bool a_cap = va > 0, b_cap = vb > 0;
@@ -232,7 +232,7 @@ int PVSQ::eval_ctx(
     });
 
     // PVS negamax
-    bool first_move      = true;
+    bool first_move = true;
     Move best_move_found = INVALID_MOVE;
 
     for(auto& action : actions){
@@ -243,14 +243,14 @@ int PVSQ::eval_ctx(
         if(first_move){
             int raw = eval_ctx(next, depth-1,
                 same ? alpha : -beta,
-                same ? beta  : -alpha,
+                same ? beta : -alpha,
                 history, ply+1, ctx, p);
             score = same ? raw : -raw;
             first_move = false;
         } else {
             // Null-window probe
             int raw = eval_ctx(next, depth-1,
-                same ?  alpha    : -(alpha+1),
+                same ?  alpha : -(alpha+1),
                 same ? (alpha+1) :  -alpha,
                 history, ply+1, ctx, p);
             score = same ? raw : -raw;
@@ -271,20 +271,19 @@ int PVSQ::eval_ctx(
             if(PIECE_VALUES[state->piece_at(1-state->player,
                     action.second.first, action.second.second)] == 0)
                 killer_store(ply, action);
-            tt[tt_idx] = {h, beta, pack_move(action),
-                          (uint8_t)std::min(depth, 255), TT_LOWER};
+            tt[tt_idx] = {h, beta, pack_move(action), (uint8_t)std::min(depth, 255), TT_LOWER};
             history.pop(h);   // must balance the push above before early return
             return beta;
         }
         if(score > alpha){
-            alpha           = score;
+            alpha = score;
             best_move_found = action;
         }
     }
 
     // Store in TT
-    uint8_t  flag = (alpha <= orig_alpha) ? TT_UPPER : TT_EXACT;
-    uint16_t pm   = (best_move_found != INVALID_MOVE) ? pack_move(best_move_found) : 0;
+    uint8_t flag = (alpha <= orig_alpha) ? TT_UPPER : TT_EXACT;
+    uint16_t pm = (best_move_found != INVALID_MOVE) ? pack_move(best_move_found) : 0;
     tt[tt_idx] = {h, alpha, pm, (uint8_t)std::min(depth, 255), flag};
 
     history.pop(h);
@@ -302,9 +301,6 @@ SearchResult PVSQ::search(
     SearchContext& ctx
 ){
     ctx.reset();
-    std::fill(tt, tt + TT_SIZE, TTEntry{});                          // clear TT each search
-    std::fill(killers[0], killers[0] + MAX_PLY * 2, INVALID_MOVE);  // clear killers
-
     PVSQParams p = PVSQParams::from_map(ctx.params);
     SearchResult result;
     result.depth = depth;
@@ -322,12 +318,6 @@ SearchResult PVSQ::search(
     // Root TT lookup — use best move from previous iteration
     uint64_t h = state->hash();
 
-    // NOTE: do NOT push h into history here.
-    // ubgi.cpp already pushes the starting position and all replayed moves
-    // into g_history before calling search(). A second push here would
-    // double-count the root, causing check_repetition() to fire a false
-    // draw after just one more repetition instead of the required three.
-
     int tt_idx = (int)(h & (uint64_t)(TT_SIZE - 1));
     Move tt_move = INVALID_MOVE;
     if(tt[tt_idx].key == h && tt[tt_idx].packed_move != 0){
@@ -337,10 +327,12 @@ SearchResult PVSQ::search(
     // Root move ordering: TT move first, then captures (MVV-LVA), then killers, then quiet
     std::stable_sort(state->legal_actions.begin(), state->legal_actions.end(),
         [&](const Move& a, const Move& b){
+            // TT
             bool a_tt = (a == tt_move);
             bool b_tt = (b == tt_move);
             if(a_tt != b_tt) return a_tt;
 
+            // MVV-LVA
             int va = PIECE_VALUES[state->piece_at(1-state->player, a.second.first, a.second.second)];
             int vb = PIECE_VALUES[state->piece_at(1-state->player, b.second.first, b.second.second)];
             bool a_cap = va > 0, b_cap = vb > 0;
@@ -376,8 +368,8 @@ SearchResult PVSQ::search(
         } else {
             // Null-window probe
             int raw = eval_ctx(next, depth-1,
-                same ?  alpha    : -(alpha+1),
-                same ? (alpha+1) :  -alpha,
+                same ?  alpha : -(alpha+1),
+                same ? (alpha+1) : -alpha,
                 history, 1, ctx, p);
             score = same ? raw : -raw;
 
@@ -385,7 +377,7 @@ SearchResult PVSQ::search(
             if(score > alpha && score < beta){
                 int raw2 = eval_ctx(next, depth-1,
                     same ? alpha : -beta,
-                    same ? beta  : -alpha,
+                    same ? beta : -alpha,
                     history, 1, ctx, p);
                 score = same ? raw2 : -raw2;
             }
@@ -393,21 +385,20 @@ SearchResult PVSQ::search(
         delete next;
 
         if(score > alpha){
-            alpha            = score;
+            alpha = score;
             result.best_move = action;
-            result.score     = alpha;
+            result.score = alpha;
 
             if(p.report_partial && ctx.on_root_update)
-                ctx.on_root_update({result.best_move, alpha, depth,
-                                    move_index+1, total_moves});
+                ctx.on_root_update({result.best_move, alpha, depth, move_index+1, total_moves});
         }
         move_index++;
     }
 
-    result.nodes    = ctx.nodes;
+    result.nodes = ctx.nodes;
     result.seldepth = ctx.seldepth;
-    result.pv       = {result.best_move};
-    result.score    = alpha;
+    result.pv = {result.best_move};
+    result.score = alpha;
 
     // Save root result back into the Transposition Table
     uint16_t pm = (result.best_move != INVALID_MOVE) ? pack_move(result.best_move) : 0;

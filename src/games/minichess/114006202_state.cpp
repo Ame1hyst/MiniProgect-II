@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <cstdlib>
 
-#include "./state.hpp"
+#include "./114006202_state.hpp"
 #include "config.hpp"
 #include "../../policy/game_history.hpp"
 
@@ -166,12 +166,12 @@ int State::evaluate(
                             passed = false;
                             break;
                         }
-                        // Fix: Check left capture diagonal
+                        // left capture diagonal
                         if(c > 0 && oppn_board[next_r][c-1] == 1){
                             passed = false;
                             break;
                         }
-                        // Fix: Check right capture diagonal
+                        // Check right capture diagonal
                         if(c < BOARD_W - 1 && oppn_board[next_r][c+1] == 1){
                             passed = false;
                             break;
@@ -200,12 +200,12 @@ int State::evaluate(
                             passed = false;
                             break;
                         }
-                        // Fix: Check left capture diagonal
+                        // Check left capture diagonal
                         if(c > 0 && self_board[next_r][c-1] == 1){
                             passed = false;
                             break;
                         }
-                        // Fix: Check right capture diagonal
+                        // Check right capture diagonal
                         if(c < BOARD_W - 1 && self_board[next_r][c+1] == 1){
                             passed = false;
                             break;
@@ -222,7 +222,7 @@ int State::evaluate(
             }
         }
 
-        /* ===  Doubled Pawn - pawn i same col === */
+        /* ===  Doubled Pawn - pawn in same col === */
         for(int c = 0; c < BOARD_W; c++){
             int self_pawn_in_col = 0;
             int oppn_pawn_in_col = 0;
@@ -260,8 +260,6 @@ int State::evaluate(
         // bonus += 2 * (self_mobility - oppn_mobility);
 
         int self_mobility = this->legal_actions.size();
-        
-        // Fix: Removed expensive heap allocation (create_null_state) which was destroying speed
         bonus += 2 * (self_mobility);
     }
 

@@ -15,10 +15,10 @@
 #include "game_history.hpp"
 #include "minimax.hpp"
 #include "random.hpp"
-#include "alphabeta.hpp" 
-#include "pvs.hpp"
-#include "quiescence.hpp"
-#include "pvs_q.hpp"
+#include "114006202_alphabeta.hpp" 
+#include "114006202_pvs.hpp"
+#include "114006202_quiescence.hpp"
+#include "114006202_submission.hpp"
 
 struct AlgoEntry {
     std::string name;
@@ -70,7 +70,7 @@ inline const std::vector<AlgoEntry>& get_algo_table(){
             }
         },
         {
-            "pvs_q",
+            "submission",
             PVSQ::default_params(),
             PVSQ::param_defs(),
             [](State* s, int d, GameHistory& h, SearchContext& c){
